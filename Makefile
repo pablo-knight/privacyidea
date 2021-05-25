@@ -1,4 +1,3 @@
-#####
 info:
 	@echo "make clean        	 - remove all automatically created files"
 	@echo "make doc-man          - create the documentation as man-page"

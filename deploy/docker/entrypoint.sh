@@ -48,14 +48,6 @@ then
 	pi-manage setup create_audit_keys
 fi
 
-# optional
-# import resolver.json if exists
-#if [ -f /privacyidea/etc/persistent/resolver.json ]
-#then
-#	pi-manage config import -i /privacyidea/etc/persistent/resolver.json
-#	mv /privacyidea/etc/persistent/resolver.json /privacyidea/etc/persistent/resolver.json_deployed
-#fi
-
 # run DB schema update if requested
 if [ "$1" == "PI_UPDATE" ]
 then

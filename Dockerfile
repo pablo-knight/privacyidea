@@ -33,8 +33,10 @@ RUN venv/bin/python -m build --wheel --outdir dist && \
     venv/bin/pip install psycopg2-binary==${PSYCOPG2} gunicorn==${GUNICORN}
 
 # Kopiere Konfigurationsdateien und Skripte
-COPY deploy/docker/entrypoint.sh venv/bin/entrypoint.sh
-COPY deploy/docker/healthcheck.py venv/bin/healthcheck.py
+#COPY deploy/docker/entrypoint.sh venv/bin/entrypoint.sh
+#COPY deploy/docker/healthcheck.py venv/bin/healthcheck.py
+COPY deploy/docker/entrypoint.sh entrypoint.sh
+COPY deploy/docker/healthcheck.py healthcheck.py
 COPY deploy/docker/pi.cfg etc/pi.cfg
 COPY deploy/docker/logging.cfg etc/logging.cfg
 
@@ -58,10 +60,16 @@ RUN apk add --no-cache python-${PYVERSION}
 # Übernehme aus der Builder-Stage nur das Virtualenv und den etc-Ordner
 COPY --from=builder /privacyidea/venv venv
 COPY --from=builder /privacyidea/etc etc
+COPY --from=builder /privacyidea/healthcheck.py healthcheck.py
+COPY --from=builder /privacyidea/entrypoint.sh entrypoint.sh
 
 # Exponiere den Port (die Umgebungsvariable PORT sollte gesetzt sein)
 EXPOSE ${PORT}
 
 # Starte den privacyIDEA-Server über das EntryPoint-Skript
-ENTRYPOINT ["entrypoint.sh"]
+#ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["./entrypoint.sh"]
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD python /privacyidea/healthcheck.py
+
 

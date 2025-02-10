@@ -11,7 +11,7 @@ sleep 5
 
 export PATH="/privacyidea/venv/bin:$PATH"
 
-# Virtuelle Umgebung aktivieren
+# Activate virtual environment
 source activate
 
 # create enckey

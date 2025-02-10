@@ -4,11 +4,11 @@ import os
 import sys
 import time
 
-# Setze Default-Werte, falls die Umgebungsvariablen nicht vorhanden sind
-HOST = os.getenv('PI_HOST', 'localhost')  # Alternative zu HOSTNAME, falls manuell gesetzt
-PORT = os.getenv('PI_PORT', '8080')       # Standard-Port als Fallback
-RETRY_COUNT = 3                            # Anzahl der Wiederholungen
-TIMEOUT = 5                                # Sekunden pro Anfrage
+# Set default values if the environment variables are not available
+HOST = os.getenv('PI_HOST', 'localhost')  # Alternative to HOSTNAME, if set manually
+PORT = os.getenv('PI_PORT', '8080')       # Default port as fallback
+RETRY_COUNT = 3                            # Number of repetitions
+TIMEOUT = 5                                # Seconds per request
 
 BASE_URL = f"http://{HOST}:{PORT}"
 
@@ -17,21 +17,21 @@ def health_check():
         try:
             response = requests.get(BASE_URL, timeout=TIMEOUT)
             if response.status_code == 200:
-                print(f"[OK] Healthcheck erfolgreich - Status: {response.status_code}")
+                print(f"[OK] Healthcheck successful - status: {response.status_code}")
                 return 0  # Erfolg
             else:
-                print(f"[WARN] Unerwarteter Statuscode: {response.status_code}, Versuch {attempt+1}/{RETRY_COUNT}")
+                print(f"[WARN] Unexpected statuscode: {response.status_code}, attempt {attempt+1}/{RETRY_COUNT}")
         except requests.ConnectionError:
-            print(f"[ERROR] Keine Verbindung zu {BASE_URL}, Versuch {attempt+1}/{RETRY_COUNT}")
+            print(f"[ERROR] No connections to {BASE_URL}, attempt {attempt+1}/{RETRY_COUNT}")
         except requests.Timeout:
-            print(f"[ERROR] Timeout nach {TIMEOUT} Sekunden bei {BASE_URL}, Versuch {attempt+1}/{RETRY_COUNT}")
+            print(f"[ERROR] Timeout after {TIMEOUT} Sekunden bei {BASE_URL}, attempt {attempt+1}/{RETRY_COUNT}")
         except Exception as e:
-            print(f"[ERROR] Unerwarteter Fehler: {str(e)}, Versuch {attempt+1}/{RETRY_COUNT}")
+            print(f"[ERROR] Unexpected failure: {str(e)}, attempt {attempt+1}/{RETRY_COUNT}")
 
-        time.sleep(2)  # Warte kurz, bevor der nächste Versuch erfolgt
+        time.sleep(2) # Wait briefly before the next attempt is made 
 
-    print(f"[CRITICAL] Healthcheck fehlgeschlagen nach {RETRY_COUNT} Versuchen.")
-    sys.exit(1)  # Fehlerhafter Container-Zustand
+    print(f"[CRITICAL] Healthcheck failed after {RETRY_COUNT} attempts.")
+    sys.exit(1)  # Faulty container status
 
 if __name__ == "__main__":
     sys.exit(health_check())

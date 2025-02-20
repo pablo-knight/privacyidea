@@ -1,5 +1,5 @@
 #!/bin/sh
-set -e
+set -xe
 
 PI_UPDATE="${PI_UPDATE:-false}"
 PI_PORT="${PI_PORT:-8080}"
@@ -12,7 +12,7 @@ sleep 5
 export PATH="/privacyidea/venv/bin:$PATH"
 
 # Activate virtual environment
-source activate
+#source activate
 
 # create enckey
 if [ ! -s /privacyidea/etc/persistent/enckey ]
@@ -37,8 +37,6 @@ then
 	touch /privacyidea/etc/persistent/dbcreated
 	echo "### Stamp database ###"
 	pi-manage db stamp head -d /privacyidea/lib/privacyidea/migrations/
-	echo "### Create initial admin user ###"
-	pi-manage admin add --password ${PI_ADMIN_PASS:-admin} ${PI_ADMIN:-admin}
 fi
 
 # create audit keys if not exists

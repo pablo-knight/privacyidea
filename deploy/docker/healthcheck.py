@@ -18,13 +18,13 @@ def health_check():
             response = requests.get(BASE_URL, timeout=TIMEOUT)
             if response.status_code == 200:
                 print(f"[OK] Healthcheck successful - status: {response.status_code}")
-                return 0  # Erfolg
+                return 0  # Success
             else:
                 print(f"[WARN] Unexpected statuscode: {response.status_code}, attempt {attempt+1}/{RETRY_COUNT}")
         except requests.ConnectionError:
             print(f"[ERROR] No connections to {BASE_URL}, attempt {attempt+1}/{RETRY_COUNT}")
         except requests.Timeout:
-            print(f"[ERROR] Timeout after {TIMEOUT} Sekunden bei {BASE_URL}, attempt {attempt+1}/{RETRY_COUNT}")
+            print(f"[ERROR] Timeout after {TIMEOUT} seconds at {BASE_URL}, attempt {attempt+1}/{RETRY_COUNT}")
         except Exception as e:
             print(f"[ERROR] Unexpected failure: {str(e)}, attempt {attempt+1}/{RETRY_COUNT}")
 

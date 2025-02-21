@@ -5,11 +5,11 @@ ARG PSYCOPG2==2.9.9
 ENV LANG=C.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/privacyidea/venv/bin:$PATH"
+    PATH="/opt/privacyidea/venv/bin:$PATH"
 
 RUN apk add --no-cache build-base
 
-WORKDIR /privacyidea
+WORKDIR /opt/privacyidea
 COPY . .
 
 RUN python3 -m venv venv && \
@@ -22,24 +22,24 @@ RUN venv/bin/python -m build --wheel --outdir dist && \
 COPY deploy/docker/healthcheck.py healthcheck.py
 COPY deploy/docker/entrypoint.sh entrypoint.sh
 
-# Final Stage: Schlankes Runtime-Image – es werden nur die benötigten Dateien übertragen
+# Final Stage: Schlankes Runtime-Image – nur die benötigten Dateien werden übertragen
 FROM python:3.12-alpine
 
 ENV PYTHONUNBUFFERED=1 \
-    PATH="/privacyidea/venv/bin:/privacyidea/bin:$PATH" \
-    PRIVACYIDEA_CONFIGFILE="/privacyidea/etc/pi.cfg" \
-    PYTHONPATH=/privacyidea
+    PATH="/opt/privacyidea/venv/bin:/opt/privacyidea/bin:$PATH" \
+    PRIVACYIDEA_CONFIGFILE="/etc/privacyidea/pi.cfg" \
+    PYTHONPATH=/opt/privacyidea
 
-WORKDIR /privacyidea
-VOLUME /privacyidea/etc
+WORKDIR /opt/privacyidea
+VOLUME /etc/privacyidea
 
 RUN apk add --no-cache netcat-openbsd
 
-COPY --from=builder /privacyidea/venv venv
-COPY --from=builder /privacyidea/healthcheck.py healthcheck.py
-COPY --from=builder /privacyidea/entrypoint.sh entrypoint.sh
+COPY --from=builder /opt/privacyidea/venv venv
+COPY --from=builder /opt/privacyidea/healthcheck.py healthcheck.py
+COPY --from=builder /opt/privacyidea/entrypoint.sh entrypoint.sh
 
 EXPOSE ${PORT}
 ENTRYPOINT ["./entrypoint.sh"]
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD python /privacyidea/healthcheck.py
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD python /opt/privacyidea/healthcheck.py
 

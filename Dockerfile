@@ -20,6 +20,7 @@ RUN venv/bin/python -m build --wheel --outdir dist && \
     venv/bin/pip install --no-cache-dir psycopg2-binary==${PSYCOPG2} gunicorn==${GUNICORN}
 
 COPY deploy/docker/healthcheck.py healthcheck.py
+COPY deploy/docker/entrypoint.sh entrypoint.sh
 
 # Final Stage: Schlankes Runtime-Image – es werden nur die benötigten Dateien übertragen
 FROM python:3.12-alpine
@@ -36,6 +37,7 @@ RUN apk add --no-cache netcat-openbsd
 
 COPY --from=builder /privacyidea/venv venv
 COPY --from=builder /privacyidea/healthcheck.py healthcheck.py
+COPY --from=builder /privacyidea/entrypoint.sh entrypoint.sh
 
 EXPOSE ${PORT}
 ENTRYPOINT ["./entrypoint.sh"]

@@ -18,7 +18,6 @@
 #
 import json
 import logging
-from hashlib import sha256
 
 import cryptography.x509
 from cryptography.hazmat._oid import NameOID
@@ -39,18 +38,18 @@ from webauthn.registration.verify_registration_response import VerifiedRegistrat
 
 from privacyidea.api.lib.utils import get_optional, get_required, get_required_one_of, get_optional_one_of
 from privacyidea.lib import _
+from privacyidea.lib import fido2
 from privacyidea.lib.challenge import get_challenges
 from privacyidea.lib.config import get_from_config
-from privacyidea.lib.crypto import get_rand_digit_str
 from privacyidea.lib.decorators import check_token_locked
 from privacyidea.lib.error import EnrollmentError, ParameterError, ERROR
-from privacyidea.lib import fido2
+from privacyidea.lib.fido2.config import FIDO2ConfigOptions
+from privacyidea.lib.fido2.policy_action import FIDO2PolicyAction, PasskeyAction
+from privacyidea.lib.fido2.token_info import FIDO2TokenInfo
+from privacyidea.lib.fido2.util import hash_credential_id, save_credential_id_hash
 from privacyidea.lib.log import log_with
 from privacyidea.lib.policy import ACTION, SCOPE
 from privacyidea.lib.tokenclass import TokenClass, ROLLOUTSTATE, AUTHENTICATIONMODE, CLIENTMODE
-from privacyidea.lib.fido2.token_info import FIDO2TokenInfo
-from privacyidea.lib.fido2.policy_action import FIDO2PolicyAction, PasskeyAction
-from privacyidea.lib.fido2.config import FIDO2ConfigOptions
 from privacyidea.models import Challenge
 
 log = logging.getLogger(__name__)
@@ -159,7 +158,8 @@ class PasskeyTokenClass(TokenClass):
 
             # User ID
             fido2_user_id = base64url_to_bytes(
-                token_user.attributes["fido2_user_id"]) if "fido2_user_id" in token_user.attributes else None
+                token_user.attributes[
+                    FIDO2TokenInfo.USER_ID]) if FIDO2TokenInfo.USER_ID in token_user.attributes else None
 
             # Excluded Credentials
             reg_ids = get_optional(params, "registered_credential_ids") or []
@@ -202,7 +202,7 @@ class PasskeyTokenClass(TokenClass):
             # Save the userid if there was none before
             if not fido2_user_id:
                 fido2_user_id = registration_options.user.id
-                token_user.set_attribute("fido2_user_id", bytes_to_base64url(fido2_user_id))
+                token_user.set_attribute(FIDO2TokenInfo.USER_ID, bytes_to_base64url(fido2_user_id))
 
             options_json: str = options_to_json(registration_options)
             response_detail["passkey_registration"] = json.loads(options_json)
@@ -212,7 +212,7 @@ class PasskeyTokenClass(TokenClass):
             self.add_tokeninfo_dict({
                 FIDO2TokenInfo.RELYING_PARTY_ID: rp_id,
                 FIDO2TokenInfo.RELYING_PARTY_NAME: rp_name,
-                "fido2_user_id": bytes_to_base64url(fido2_user_id)
+                FIDO2TokenInfo.USER_ID: bytes_to_base64url(fido2_user_id)
             })
         else:
             response_detail = {}
@@ -286,16 +286,19 @@ class PasskeyTokenClass(TokenClass):
             self.token.rollout_state = ROLLOUTSTATE.ENROLLED
             # Protect the credential_id by setting it as the token secret
             self.set_otpkey(bytes_to_base64url(registration_verification.credential_id))
-            # Add a hash of the credential_id to the token info to be able to find
-            # the token faster given the credential_id
+
+            # Token Info
+            credential_id_hash = hash_credential_id(credential_id)
             token_info: dict = {
-                "device_type": registration_verification.credential_device_type,
-                "backed_up": registration_verification.credential_backed_up,
-                "public_key": bytes_to_base64url(registration_verification.credential_public_key),
-                "aaguid": registration_verification.aaguid,
-                "sign_count": registration_verification.sign_count,
-                "credential_id_hash": sha256(registration_verification.credential_id).hexdigest()
+                FIDO2TokenInfo.DEVICE_TYPE: registration_verification.credential_device_type,
+                FIDO2TokenInfo.BACKED_UP: registration_verification.credential_backed_up,
+                FIDO2TokenInfo.PUBLIC_KEY: bytes_to_base64url(registration_verification.credential_public_key),
+                FIDO2TokenInfo.AAGUID: registration_verification.aaguid,
+                FIDO2TokenInfo.SIGN_COUNT: registration_verification.sign_count,
+                FIDO2TokenInfo.CREDENTIAL_ID_HASH: credential_id_hash
             }
+            # Save the credential_id hash to an extra table to be able to find the token faster
+            save_credential_id_hash(credential_id_hash, self.token.id)
 
             # If the attestation object contains a x5c certificate, save it in the token info
             # and set the description to the CN if it is not already set
@@ -307,7 +310,7 @@ class PasskeyTokenClass(TokenClass):
                         attestation_object.att_stmt.x5c[0])
                     certificate_pem: str = (attestation_certificate.public_bytes(serialization.Encoding.PEM)
                                             .decode("utf-8").replace("\n", ""))
-                    token_info["attestation_certificate"] = certificate_pem
+                    token_info[FIDO2TokenInfo.ATTESTATION_CERTIFICATE] = certificate_pem
                     if not self.token.description:
                         attributes: list[NameAttribute] = attestation_certificate.subject.get_attributes_for_oid(
                             NameOID.COMMON_NAME)
@@ -421,3 +424,28 @@ class PasskeyTokenClass(TokenClass):
         """
 
         return self.check_pin(passw, user=user, options=options or {})
+
+    @check_token_locked
+    def authenticate(self, passw, user=None, options=None):
+        """
+        This is called from check_tokenlist. Suppress missing params here so "wrong otp value" is returned if no
+        authentication could be made.
+        """
+        try:
+            authenticator_data = get_required_one_of(options, ["authenticatorData", "authenticatordata"])
+            client_data_json = get_required_one_of(options, ["clientDataJSON", "clientdata"])
+            signature = get_required_one_of(options, ["signature", "signaturedata"])
+            user_handle = get_optional_one_of(options, ["userHandle", "userhandle"])
+            expected_challenge = get_required(options, "challenge").encode("utf-8")
+            expected_origin = get_required(options, "HTTP_ORIGIN")
+            user_verification = get_optional(options, "user_verification", "preferred")
+        except ParameterError as e:
+            log.debug(f"Missing parameter for authentication with passkey: {e}")
+            # TODO authenticate has horrible return values
+            return False, -1, None
+
+        pin_match = self.check_pin(passw, user=user, options=options)
+        if not pin_match:
+            return False, -1, None
+        otp_match = self.check_otp(None, 0, None, options)
+        return pin_match, otp_match, None

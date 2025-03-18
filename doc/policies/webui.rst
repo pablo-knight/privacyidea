@@ -189,6 +189,19 @@ type: ``string``
 Defines the default tokentype when enrolling a new token in the WebUI. This
 tokentype will be selected when entering the enrollment dialog.
 
+.. index:: Default Container Type
+.. _policy_default_container_type:
+
+default_container_type
+~~~~~~~~~~~~~~~~~~~~~~
+
+type: ``string``
+
+Defines the default container type when creating a new container in the WebUI. This container type will be selected
+when entering the container create dialog. If this policy is not set, the default type is `Generic`.
+
+New in version 3.11
+
 .. index:: Wizard, Token wizard
 .. _policy_token_wizard:
 
@@ -233,6 +246,42 @@ tokenwizard_2nd_token
 type: ``bool``
 
 The tokenwizard will be displayed in the token menu even if the user already has a token.
+
+.. _policy_container_wizard_type:
+
+container_wizard_type
+~~~~~~~~~~~~~~~~~~~~~
+
+type: ``string``
+
+This policy defines the container type to be used in the container wizard. The container wizard is displayed in the ui
+when the user has no container assigned. It shows a simplified view to create the first container. To activate the
+container wizard, at least this policy has to be defined. Read :ref:`container_wizard` for more information.
+
+.. _policy_container_wizard_template:
+
+container_wizard_template
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+type: ``string``
+
+This policy defines the template to be used in the container wizard. Note that the selected template must be of the
+same container type as defined in the action `container_wizard_type`. This policy is optional. If not set, no template
+will be used to create the container in the wizard.
+
+
+.. _policy_container_wizard_registration:
+
+container_wizard_registration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+type: ``bool``
+
+In the container wizard, a QR code to register the created container on a smartphone will be displayed. After
+registration, the smartphone can be synchronized with the server. See :ref:`container_synchronization` for more
+information.
+This policy is only applicable for smartphone containers and will be ignored for all other types.
+
 
 .. index:: Realm-box, Realm dropdown
 
@@ -475,3 +524,38 @@ type: ``string``
 
 With this policy you may specify a custom privacy statement link which is displayed
 in the WebUI baseline.
+
+.. _policy_rss_feeds:
+
+rss_feeds
+~~~~~~~~~
+
+type: str
+
+This policy defines which RSS feeds are displayed in the Web UI to the users or administrators.
+The input format is like ``'Feed Name':'URL'-'Another Feed Name':'URL'``. The feed name will be displayed as the title
+for the feed defined by the URL. Feed name and url shall be wrapped in single quotes and separated by a colon.
+Multiple feeds can be separated by a dash. Note that commas are not allowed in policy actions at all.
+
+The default is:
+
+.. code-block::
+
+    'Community News':'https://community.privacyidea.org/c/news.rss'-
+    'privacyIDEA News':'https://privacyidea.org/feed'-
+    'NetKnights News':'https://netknights.it/en/feed'
+
+This way you can display news feeds from the community, privacyIDEA and NetKnights informing you about new
+updates or other critical information.
+You can use your own internal news feeds, if you want to provide your own information to users.
+
+.. _policy_rss_age:
+
+rss_age
+~~~~~~~
+
+type: int
+
+This defines the age of the displayed news feeds. The default is 180 days. You can specify a different age in days.
+
+.. note:: If you specify the age 0, then the UI tab "News" will be hidden.

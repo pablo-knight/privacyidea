@@ -43,6 +43,7 @@ import datetime
 import functools
 import json
 import logging
+import netaddr
 import re
 import traceback
 from urllib.parse import quote
@@ -50,17 +51,15 @@ from urllib.parse import quote
 from flask import g, current_app, make_response
 
 from privacyidea.api.lib.utils import get_all_params
-from privacyidea.lib import lazy_gettext
+from privacyidea.lib import _, lazy_gettext
 from privacyidea.lib.auth import ROLE
-from privacyidea.lib.config import get_multichallenge_enrollable_tokentypes, get_token_class
-from privacyidea.lib.config import get_privacyidea_node
+from privacyidea.lib.config import get_multichallenge_enrollable_tokentypes, get_token_class, get_privacyidea_node
 from privacyidea.lib.crypto import Sign
 from privacyidea.lib.error import PolicyError, ValidateError
+from privacyidea.lib.info.rss import FETCH_DAYS
 from privacyidea.lib.machine import get_auth_items
-from privacyidea.lib.policy import DEFAULT_ANDROID_APP_URL, DEFAULT_IOS_APP_URL
-from privacyidea.lib.policy import DEFAULT_PREFERRED_CLIENT_MODE_LIST
-from privacyidea.lib.policy import Match
-from privacyidea.lib.policy import SCOPE, ACTION, AUTOASSIGNVALUE, AUTHORIZED
+from privacyidea.lib.policy import (DEFAULT_ANDROID_APP_URL, DEFAULT_IOS_APP_URL, DEFAULT_PREFERRED_CLIENT_MODE_LIST,
+                                    SCOPE, ACTION, AUTOASSIGNVALUE, AUTHORIZED, Match)
 from privacyidea.lib.realm import get_default_realm
 from privacyidea.lib.subscriptions import (subscription_status,
                                            get_subscription,
@@ -69,10 +68,11 @@ from privacyidea.lib.subscriptions import (subscription_status,
                                            EXPIRE_MESSAGE)
 from privacyidea.lib.token import get_tokens, assign_token, get_realms_of_token, get_one_token, init_token
 from privacyidea.lib.tokenclass import ROLLOUTSTATE
+from privacyidea.lib.tokens.passkeytoken import PasskeyTokenClass
 from privacyidea.lib.user import User
 from privacyidea.lib.utils import create_img, get_version
-from .prepolicy import check_max_token_user, check_max_token_realm, fido2_enroll
-from ...lib.tokens.passkeytoken import PasskeyTokenClass
+from .prepolicy import check_max_token_user, check_max_token_realm, fido2_enroll, rss_age
+from ...lib.container import get_all_containers
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ DEFAULT_LOGOUT_TIME = 120
 DEFAULT_AUDIT_PAGE_SIZE = 10
 DEFAULT_PAGE_SIZE = 15
 DEFAULT_TOKENTYPE = "hotp"
+DEFAULT_CONTAINER_TYPE = "generic"
 DEFAULT_TIMEOUT_ACTION = "lockscreen"
 DEFAULT_POLICY_TEMPLATE_URL = "https://raw.githubusercontent.com/privacyidea/" \
                               "policy-templates/master/templates/"
@@ -581,21 +582,43 @@ def get_webui_settings(request, response):
                                        user=username, realm=realm).action_values(unique=False)
         token_wizard = False
         dialog_no_token = False
+        container_wizard = {"enabled": False}
         if role == ROLE.USER:
-            user_obj = User(username, realm)
-            user_token_num = get_tokens(user=user_obj, count=True)
-            token_wizard_pol = Match.user(g, scope=SCOPE.WEBUI, action=ACTION.TOKENWIZARD, user_object=user_obj).any()
+            user = User(username, realm)
+            user_token_num = get_tokens(user=user, count=True)
+            token_wizard_pol = Match.user(g, scope=SCOPE.WEBUI, action=ACTION.TOKENWIZARD, user_object=user).any()
             # We also need to check, if the user has no tokens assigned.
             # If the user has no tokens, we run the wizard. If the user
             # already has tokens, we do not run the wizard.
             token_wizard = token_wizard_pol and (user_token_num == 0)
 
             dialog_no_token_pol = Match.user(g, scope=SCOPE.WEBUI, action=ACTION.DIALOG_NO_TOKEN,
-                                             user_object=user_obj).any()
+                                             user_object=user).any()
             dialog_no_token = dialog_no_token_pol and (user_token_num == 0)
             # This only works for users, because the value of the policy does not change while logged in.
-            if Match.user(g, SCOPE.USER, "indexedsecret_force_attribute", user_obj).action_values(unique=False):
+            if Match.user(g, SCOPE.USER, "indexedsecret_force_attribute", user).action_values(unique=False):
                 content["result"]["value"]["indexedsecret_force_attribute"] = 1
+
+            user_container = get_all_containers(user=user, page=1, pagesize=1)
+            if user_container["count"] == 0:
+                container_wizard_type_policy = Match.user(g, SCOPE.WEBUI, ACTION.CONTAINER_WIZARD_TYPE,
+                                                          user_object=user).action_values(unique=True)
+                if container_wizard_type_policy:
+                    container_wizard_type = list(container_wizard_type_policy.keys())[0]
+                    container_wizard_template_policy = Match.user(g, SCOPE.WEBUI, ACTION.CONTAINER_WIZARD_TEMPLATE,
+                                                                  user_object=user).action_values(unique=True)
+                    if container_wizard_template_policy:
+                        template = list(container_wizard_template_policy.keys())[0]
+                        # The template policy contains the name and the type: Extract only the name
+                        container_wizard_template = template.split(f"({container_wizard_type})")[0]
+                    else:
+                        container_wizard_template = None
+                    container_wizard_registration = Match.user(g, SCOPE.WEBUI,
+                                                               ACTION.CONTAINER_WIZARD_REGISTRATION,
+                                                               user_object=user).any()
+                    container_wizard = {"enabled": True, "type": container_wizard_type,
+                                        "template": container_wizard_template,
+                                        "registration": container_wizard_registration}
 
         user_details_pol = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.USERDETAILS,
                                          user=username, realm=realm).policies()
@@ -609,6 +632,8 @@ def get_webui_settings(request, response):
                                               user=username, realm=realm).any()
         default_tokentype_pol = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.DEFAULT_TOKENTYPE,
                                               user=username, realm=realm).action_values(unique=True)
+        default_container_type_pol = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.DEFAULT_CONTAINER_TYPE,
+                                                   user=username, realm=realm).action_values(unique=True)
         show_seed = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.SHOW_SEED,
                                   user=username, realm=realm).any()
         show_node = Match.generic(g, scope=SCOPE.WEBUI, action=ACTION.SHOW_NODE, realm=realm).any()
@@ -631,6 +656,7 @@ def get_webui_settings(request, response):
         user_page_size = DEFAULT_PAGE_SIZE
         require_description = list(require_description.keys())
         default_tokentype = DEFAULT_TOKENTYPE
+        default_container_type = DEFAULT_CONTAINER_TYPE
         logout_redirect_url = ""
         if len(audit_page_size_pol) == 1:
             audit_page_size = int(list(audit_page_size_pol)[0])
@@ -640,6 +666,8 @@ def get_webui_settings(request, response):
             user_page_size = int(list(user_page_size_pol)[0])
         if len(default_tokentype_pol) == 1:
             default_tokentype = list(default_tokentype_pol)[0]
+        if len(default_container_type_pol) == 1:
+            default_container_type = list(default_container_type_pol)[0]
         if len(logout_redirect_url_pol) == 1:
             logout_redirect_url = list(logout_redirect_url_pol)[0]
 
@@ -668,6 +696,7 @@ def get_webui_settings(request, response):
         content["result"]["value"]["user_page_size"] = user_page_size
         content["result"]["value"]["policy_template_url"] = policy_template_url
         content["result"]["value"]["default_tokentype"] = default_tokentype
+        content["result"]["value"]["default_container_type"] = default_container_type
         content["result"]["value"]["user_details"] = len(user_details_pol) > 0
         content["result"]["value"]["token_wizard"] = token_wizard
         content["result"]["value"]["token_wizard_2nd"] = token_wizard_2nd
@@ -689,6 +718,10 @@ def get_webui_settings(request, response):
         content["result"]["value"]["qr_image_custom"] = qr_image_custom
         content["result"]["value"]["logout_redirect_url"] = logout_redirect_url
         content["result"]["value"]["require_description"] = require_description
+        rss_age(request, None)
+        content["result"]["value"]["rss_age"] = request.all_data.get("rss_age", FETCH_DAYS)
+        content["result"]["value"]["container_wizard"] = container_wizard
+
         if role == ROLE.ADMIN:
             # Add a support mailto, for administrators with systemwrite rights.
             subscriptions = get_subscription("privacyidea")

@@ -1,3 +1,18 @@
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GitLab API
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" "https://lucan.netknights.it/api/v4/projects")
+          if [ "$response" -eq 200 ]; then
+            echo "✅ GitLab API ist erreichbar!"
+          else
+            echo "❌ Fehler: API gibt Statuscode $response zurück"
+            exit 1
+          fi
+
+
 name: Trigger Self-Hosted GitLab Pipeline
 
 on:

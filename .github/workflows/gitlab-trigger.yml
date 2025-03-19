@@ -1,0 +1,16 @@
+name: Trigger Self-Hosted GitLab Pipeline
+
+on:
+  push:
+    tags:
+      - '*'  # Triggert die Action bei jedem neuen Tag
+
+jobs:
+  trigger-gitlab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger GitLab Pipeline
+        run: |
+          curl --request POST "https://lucan.netknights.it/api/v4/projects/Storch/privacyidea/trigger/pipeline" \
+               --form "token=${{ secrets.GITLAB_TRIGGER_TOKEN }}" \
+               --form "ref=${{ github.ref_name }}"

@@ -31,7 +31,7 @@ jobs:
 
       - name: Trigger GitLab CI/CD Pipeline
         run: |
-          curl --request POST "${{ vars.GITLAB_URL_PIPELINE_ID_2 }}/api/v4/projects/${{ vars.GITLAB_PROJECT_ID }}/trigger/pipeline" \
+          curl --request POST "${{ vars.GITLAB_URL_PIPELINE_ID_2 }}" \
                --form "token=$GITLAB_TRIGGER_TOKEN" \
                --form "ref=$GITHUB_REF_NAME"
         env:

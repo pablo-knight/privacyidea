@@ -1,22 +1,32 @@
-name: Trigger Self-Hosted GitLab Pipeline
+name: Test GitLab API & Trigger Pipeline
 
 on:
   push:
     tags:
       - '*'  # Triggert die Action bei jedem neuen Tag
-      
+
 jobs:
-  test-api:
+  test-and-trigger:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check GitLab API
+      - name: Test GitLab API Erreichbarkeit
         run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" "https://lucan.netknights.it/api/v4/projects")
-          if [ "$response" -eq 200 ]; then
+          API_URL=${{ env.GITLAB_URL_PIPELINE_ID_2 }}
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL")
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
             echo "✅ GitLab API ist erreichbar!"
           else
-            echo "❌ Fehler: API gibt Statuscode $response zurück"
+            echo "❌ Fehler: GitLab API antwortet mit Statuscode $HTTP_STATUS"
             exit 1
           fi
 
-
+      - name: Trigger GitLab Pipeline
+        run: |
+          curl --request POST ${{ env.GITLAB_URL_PIPELINE_ID_2 }} \
+               --form "token=$GITLAB_TRIGGER_TOKEN" \
+               --form "ref=$GITHUB_REF_NAME"
+        env:
+          GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}

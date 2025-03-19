@@ -21,12 +21,16 @@ jobs:
             echo "❌ Fehler: GitLab API antwortet mit Statuscode $HTTP_STATUS"
             exit 1
           fi
-
-      - name: Trigger GitLab Pipeline
+      
+      - name: Debug GitHub Tag Name
         run: |
-          curl --request POST ${{ vars.GITLAB_URL_PIPELINE_ID_2 }} \
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "Extracted Tag: ${GITHUB_REF#refs/tags/}"
+      
+      - name: Trigger GitLab CI/CD Pipeline
+        run: |
+          curl --request POST ${{ vars.GITLAB_URL_PIPELINE_ID_2 }} 
                --form "token=$GITLAB_TRIGGER_TOKEN" \
-               --form "ref=$GITHUB_REF_NAME"
+               --form "ref=${GITHUB_REF#refs/tags/}"
         env:
           GITLAB_TRIGGER_TOKEN: ${{ secrets.GITLAB_TRIGGER_TOKEN }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}

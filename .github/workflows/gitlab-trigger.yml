@@ -12,7 +12,8 @@ jobs:
     steps:
       - name: Test GitLab API Erreichbarkeit
         run: |
-          API_URL=${{ vars.GITLAB_URL_PIPELINE_ID_2 }}
+          API_URL=${{ vars.GITLAB_URL_API }}
+          API_PROJECT_URL=${{ vars.GITLAB_URL_PIPELINE_ID_2 }}
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL")
 
           if [ "$HTTP_STATUS" -eq 200 ]; then

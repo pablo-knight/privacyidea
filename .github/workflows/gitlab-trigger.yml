@@ -1,4 +1,4 @@
-iname: Test GitLab API & Trigger Pipeline
+name: Test GitLab API & Trigger Pipeline
 
 on:
   push:

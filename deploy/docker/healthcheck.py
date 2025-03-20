@@ -1,4 +1,4 @@
-#!/privacyidea/venv/bin/python
+#!/opt/privacyidea/venv/bin/python
 import requests
 import os
 import sys

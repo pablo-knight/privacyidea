@@ -18,12 +18,7 @@ jobs:
           GITHUB_REPO_URL: https://github.com/${{ github.repository }}.git
         run: |
           curl -X POST "$GITLAB_TRIGGER_URL" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "token": "'"$GITLAB_TRIGGER_TOKEN_ID_1"'",
-              "ref": "main",
-              "variables": {
-                "GITHUB_TAG": "'"$GITHUB_TAG"'",
-                "GITHUB_REPO": "'"$GITHUB_REPO_URL"'"
-              }
-            }'
+            -F token="$GITLAB_TRIGGER_TOKEN" \
+            -F ref=main \
+            -F variables[GITHUB_TAG]="$GITHUB_TAG" \
+            -F variables[GITHUB_REPO]="$GITHUB_REPO_URL"

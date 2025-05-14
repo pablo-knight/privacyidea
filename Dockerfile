@@ -1,72 +1,68 @@
-ARG PYTHON_VERSION=3.12
+###############################################################################
+# Builder Stage: Code kopieren, Virtualenv erstellen, Wheel bauen und installieren
+###############################################################################
+FROM cgr.dev/chainguard/wolfi-base AS builder
+ARG PYVERSION=3.12
+ARG GUNICORN==23.0.0
+ARG PSYCOPG2==2.9.9
 
-FROM python:${PYTHON_VERSION}-slim AS builder
+# Grundlegende Umgebungsvariablen
+ENV LANG=C.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/privacyidea/venv/bin:$PATH"
 
-ARG GUNICORN=23.0.0
-# TODO: we should probably create a different container image for use with postgres
-ARG PSYCOPG2=2.9.10
+# Installiere Python, pip, Build-Tools und Git in einem Schritt
+RUN apk add --no-cache python-${PYVERSION} py${PYVERSION}-pip build-base
 
-# Set environment variables to optimize Python for docker
-ENV PYTHONDONTWRITEBYTECODE=1
+WORKDIR /privacyidea
+# Kopiere den gesamten Quellcode (inkl. Submodule – vorher per git checkout und git submodule update sicherstellen)
+COPY . .
 
-RUN python3 -m venv /opt/privacyidea
+# Setze Besitz und wechsle zu einem nicht-root Benutzer
+RUN chown -R nonroot:nonroot /privacyidea
+USER nonroot
 
-WORKDIR /build
+# Erstelle ein Virtualenv, upgrade pip und installiere das Build-Tool
+RUN python3 -m venv venv && \
+    venv/bin/pip install --upgrade pip build
 
-ENV PATH="/opt/privacyidea/bin:$PATH"
+# Baue das privacyIDEA-Paket als Wheel und installiere es sowie weitere Runtime-Abhängigkeiten
+RUN venv/bin/python -m build --wheel --outdir dist && \
+    venv/bin/pip install --find-links=dist dist/*.whl && \
+    venv/bin/pip install psycopg2-binary==${PSYCOPG2} gunicorn==${GUNICORN}
 
-RUN /opt/privacyidea/bin/pip install --no-cache-dir --upgrade pip setuptools
+# Kopiere Konfigurationsdateien und Skripte
+COPY deploy/docker/entrypoint.sh venv/bin/entrypoint.sh
+COPY deploy/docker/healthcheck.py venv/bin/healthcheck.py
+COPY deploy/docker/pi.cfg etc/pi.cfg
+COPY deploy/docker/logging.cfg etc/logging.cfg
 
-RUN /opt/privacyidea/bin/pip install --no-cache-dir psycopg2-binary==${PSYCOPG2} gunicorn==${GUNICORN}
+###############################################################################
+# Final Stage: Schlankes Runtime-Image – nur benötigte Dateien übernehmen
+###############################################################################
+FROM cgr.dev/chainguard/wolfi-base
+ARG PYVERSION=3.12
 
-COPY requirements.txt .
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/privacyidea/venv/bin:/privacyidea/bin:$PATH" \
+    PRIVACYIDEA_CONFIGFILE="/privacyidea/etc/pi.cfg" \
+    PYTHONPATH=/privacyidea
 
-RUN /opt/privacyidea/bin/pip install --no-cache-dir -r requirements.txt
+WORKDIR /privacyidea
+VOLUME /privacyidea/etc/persistent
 
-COPY README.rst MANIFEST.in setup.py ./
-COPY ./deploy/ ./deploy
-COPY ./migrations/ ./migrations
-COPY ./tools/ ./tools
-COPY ./privacyidea/ ./privacyidea
+# Installiere den Python-Interpreter (ohne Build-Tools)
+RUN apk add --no-cache python-${PYVERSION}
 
-RUN /opt/privacyidea/bin/pip install --no-cache-dir .
+# Übernehme aus der Builder-Stage nur das Virtualenv und den etc-Ordner
+COPY --from=builder /privacyidea/venv venv
+COPY --from=builder /privacyidea/etc etc
 
-# Final Stage: Create a slim image only with necessary files
-FROM python:${PYTHON_VERSION}-slim
+# Exponiere den Port (die Umgebungsvariable PORT sollte gesetzt sein)
+EXPOSE ${PORT}
 
-# Create a non-privileged user that the app will run under.
-# See https://docs.docker.com/go/dockerfile-user-best-practices/
-ARG UID=999
-ARG GID=999
-RUN groupadd --system --gid "${GID}" privacyidea && \
-    useradd --no-log-init --no-create-home --shell /usr/sbin/nologin \
-            --system --gid "${GID}" --uid "${UID}" privacyidea
+# Starte den privacyIDEA-Server über das EntryPoint-Skript
+ENTRYPOINT ["entrypoint.sh"]
 
-# Set environment variables to optimize Python
-# PYTHONUNBUFFERED Keeps Python from buffering stdout and stderr to avoid situations
-# where the application crashes without emitting any logs due to buffering.
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
 
-# Copy the privacyIDEA virtuelenv from the builde
-COPY --chown=privacyidea:privacyidea --from=builder /opt/privacyidea/ /opt/privacyidea/
-COPY --chown=privacyidea:privacyidea --chmod=755 deploy/docker/entrypoint.sh /opt/privacyidea/
-
-WORKDIR /opt/privacyidea
-
-# Add a volume for the configuration
-VOLUME /etc/privacyidea
-
-ENV PATH="/opt/privacyidea/bin:$PATH" \
-    PI_CONFIG_NAME="docker"
-
-# Switch to non-root user
-USER privacyidea
-
-EXPOSE 8080
-
-ENTRYPOINT ["./entrypoint.sh"]
-
-# Disable health check for now since the container start-up and configuration is not handled yet
-#HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
-#  CMD /opt/privacyidea/bin/python -c "import requests; res = requests.get('http://localhost:80', timeout=3); exit(0 if res.ok else 1);"
